@@ -14,8 +14,12 @@
 		icons: 'widgets',
 
 		onLoad: function() {
-			CKEDITOR.addCss( '.widget-placeholder{background:#eee url(' + this.path + 'icons/widgets.png) 6px 9px no-repeat;padding:6px 10px 6px 26px;border:1px solid #ccc;border-radius:5px;display:inline-block;margin:2px;}' );
+			CKEDITOR.addCss( '.widget-placeholder {background:#eee;padding:6px 10px;border:1px solid #ccc;border-radius:5px;margin:2px;display:inline-block;}' );
+			CKEDITOR.addCss( '.widget-placeholder .widget-title {background:#eee url(' + this.path + 'icons/widgets.png) 0px 3px no-repeat;padding-left: 20px;}' );
 			CKEDITOR.addCss( '.widget-placeholder .config-summary { color:#888; font-style:italic; }' );
+			CKEDITOR.addCss( '.widget-placeholder .widget-editable-content { display:none; background:#fff; padding : 10px; border:1px solid #ccc;border-radius:5px;margin-top:5px;min-height:3em; }' );
+			CKEDITOR.addCss( '.widget-placeholder.with-editable-content { display : block; }' );
+			CKEDITOR.addCss( '.widget-placeholder.with-editable-content > .widget-editable-content { display : block; }' );
 		},
 
 		init: function( editor ) {
@@ -33,23 +37,60 @@
 			editor.widgets.add( 'widgets', {
 				  dialog   : 'widgets'
 				, pathName : 'widgets'
-				, template : '<div class="widget-placeholder">&nbsp;</div>'
+				, template : '<div class="widget-placeholder"><div class="widget-title">&nbsp;</div><div class="widget-editable-content"><p></p></div></div>'
+				, editables: {
+			        content: {
+			            selector: '.widget-editable-content'
+			        }
+				  }
 				, init: function() {
 					this.setData( 'raw', this.element.getAttribute( 'data-raw' ) );
 				  }
-				, downcast: function() {return new CKEDITOR.htmlParser.text( this.data.raw ); }
+				, downcast: function() {
+					var widget = this
+					  , element   = widget.element
+					  , contentEl = element.find( ".widget-editable-content" ).getItem(0)
+					  , config;
+
+					if ( element.hasClass( "with-editable-content" ) ) {
+						try {
+							config = $.parseJSON( decodeURIComponent( widget.data.configJson ) );
+						} catch(e){
+							config = {};
+						}
+						config._inlineBody = encodeURIComponent( contentEl.getHtml() );
+						widget.data.configJson = encodeURIComponent( JSON.stringify( config ) );
+						widget.data.raw = "{{widget:" + widget.data.widgetId + ":" + widget.data.configJson + ":widget}}";
+					}
+
+					return new CKEDITOR.htmlParser.text( widget.data.raw );
+				  }
 				, data : function(){
-					var widget = this;
+					var widget = this
+					  , element   = widget.element
+					  , titleEl   = element.find( ".widget-title" ).getItem(0)
+					  , contentEl = element.find( ".widget-editable-content" ).getItem(0)
+					  , config, inlineBody = null;
 
 					if ( widget.data.raw !== null && ( !widget._previousRaw || widget._previousRaw !== widget.data.raw ) ) {
 						widget._previousRaw    = widget.data.raw;
 
 						widget.data.widgetId   = widget.data.raw.replace( widgetsReplaceRegex, "$1");
 						widget.data.configJson = widget.data.raw.replace( widgetsReplaceRegex, "$2");
+						try {
+							config = $.parseJSON( decodeURIComponent( widget.data.configJson ) );
+							inlineBody = typeof config._inlineBody === "undefined" ? null : config._inlineBody;
+						} catch(e){}
 
-						widget.element.setText( i18n.translateResource( "widgets." + widget.data.widgetId + ":title", { defaultValue : widget.data.widgetId } ) );
+
+						titleEl.setText( i18n.translateResource( "widgets." + widget.data.widgetId + ":title", { defaultValue : widget.data.widgetId } ) );
 						widget.element.addClass( "loading" );
 						widget.element.setAttribute( "data-raw", widget.data.raw );
+
+						if ( inlineBody !== null ) {
+							widget.element.addClass( "with-editable-content" );
+							contentEl.setHtml( decodeURIComponent( inlineBody ) );
+						}
 
 						$.ajax({
 							  url     : buildAjaxLink( "widgets.renderWidgetPlaceholder" )
@@ -57,7 +98,7 @@
 							, data    : { widgetId: widget.data.widgetId, data : widget.data.configJson }
 							, success : function( data ) {
 								widget.element.removeClass( "loading" );
-								widget.element.setHtml( data );
+								titleEl.setHtml( data );
 							  }
 							, error : function(){
 								widget.element.removeClass( "loading" );
@@ -79,7 +120,16 @@
 						  , innerElement  = new CKEDITOR.htmlParser.element( 'div', {
 								  'class'    : 'widget-placeholder'
 								, 'data-raw' : match
+							} )
+						  , title = new CKEDITOR.htmlParser.element( 'div', {
+								  'class'    : 'widget-title'
+							} )
+						  , content = new CKEDITOR.htmlParser.element( 'div', {
+								  'class'    : 'widget-editable-content'
 							} );
+
+						innerElement.add( title );
+						innerElement.add( content );
 
 						widgetWrapper = editor.widgets.wrapElement( innerElement, 'widgets' );
 
