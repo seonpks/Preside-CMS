@@ -58,7 +58,7 @@ component {
 
 		var filter           = "page.trashed = :trashed";
 		if( !arguments.trash ){
-			filter &= " and page.page_type in (:page_type)"
+			filter &= " and page.page_type in (:page_type)";
 		}
 
 		var maxDepth = arguments.maxDepth;
@@ -67,7 +67,7 @@ component {
 			, filter             = filter
 			, filterParams       = { trashed = arguments.trash, page_type = allowedPageTypes }
 			, useCache           = arguments.useCache
-			, groupBy            = "page.id"
+			, autoGroupBy        = true
 			, allowDraftVersions = arguments.allowDrafts
 		};
 
@@ -122,16 +122,19 @@ component {
 		, boolean allowDrafts  = $getRequestContext().showNonLiveContent()
 
 	) {
-		var args = { filter="page.id = :id", filterParams={}, useCache=arguments.useCache, allowDraftVersions=arguments.allowDrafts };
+		var args = { filter="", filterParams={}, useCache=arguments.useCache, allowDraftVersions=arguments.allowDrafts };
 
 		if ( StructKeyExists( arguments, "id" ) ) {
+			args.filter = "page.id = :id";
 			args.filterParams.id = arguments.id;
 
 		} else if ( StructKeyExists( arguments, "slug" ) ) {
-			args.filterParams.id = getPageIdBySlug( argumentCollection=arguments );
+			args.filter          = "page.id = :id";
+			args.filterParams.id = getPageIdBySlug( arguments.slug );
 
 		} else if ( StructKeyExists( arguments, "systemPage" ) ) {
-			args.filterParams.id = getPageIdBySystemPageType( arguments.systemPage );
+			args.filter       = "page.page_type = :page_type"
+			args.filterParams = { page_type = arguments.systemPage }
 
 		} else {
 			throw(
@@ -149,10 +152,10 @@ component {
 		}
 
 		if ( arguments.version ) {
-			args.fromVersionTable = true
-			args.specificVersion  = arguments.version
+			args.fromVersionTable = true;
+			args.specificVersion  = arguments.version;
 		} else if ( arguments.getLatest ) {
-			args.fromVersionTable = true
+			args.fromVersionTable = true;
 		}
 
 		return _getPObj().selectData( argumentCollection = args );
@@ -201,7 +204,7 @@ component {
 		var pobj   = _getPresideObject( pt.getPresideObject() );
 		var args  = { filter={ page=arguments.id }, allowDraftVersions=arguments.allowDrafts };
 		if ( arguments.getLatest ) {
-			args.fromVersionTable = true
+			args.fromVersionTable = true;
 		}
 		var record = pobj.selectData( argumentCollection=args );
 
@@ -209,7 +212,7 @@ component {
 			return {};
 		}
 
-		for( var r in record ) { record = r }; // query to struct hack
+		for( var r in record ) { record = r; } // query to struct hack
 		StructDelete( record, "id" );
 		StructDelete( record, "datecreated" );
 		StructDelete( record, "datemodified" );
@@ -376,7 +379,7 @@ component {
 		} else {
 			args.maxRows = 0;
 			args.startRow = 1;
-			args.selectFields = [ "count( * ) as nRows" ]
+			args.selectFields = [ "count( * ) as nRows" ];
 			result.totalRecords = _getPresideObjectService().selectData( argumentCollection=args ).nRows;
 		}
 
@@ -443,7 +446,7 @@ component {
 				, active           = true
 				, trashed          = false
 			  }
-		}
+		};
 
 		if ( arguments.version ) {
 			homepageArgs.fromVersionTable = true;
@@ -481,7 +484,7 @@ component {
 		, boolean allowDrafts       = $getRequestContext().showNonLiveContent()
 	) {
 		var args = arguments;
-		var requiredSelectFields = [ "id", "title", "navigation_title", "exclude_children_from_navigation", "page_type", "exclude_from_navigation_when_restricted", "access_restriction" ]
+		var requiredSelectFields = [ "id", "title", "navigation_title", "exclude_children_from_navigation", "page_type", "exclude_from_navigation_when_restricted", "access_restriction" ];
 		for( var field in requiredSelectFields) {
 			if ( !args.selectFields.find( field ) && !args.selectFields.find( "page." & field ) ) {
 				args.selectFields.append( "page." & field );
@@ -559,7 +562,7 @@ component {
 		);
 
 		var isManagedType   = Len( Trim( page.parent_type ) ) && getManagedChildTypesForParentType( page.parent_type ).findNoCase( page.page_type );
-		var excludedFromNav = arguments.isSubMenu ? Val( page.exclude_from_sub_navigation ) : ( Val( page.exclude_from_navigation ) || Val( page.exclude_children_from_navigation ) )
+		var excludedFromNav = arguments.isSubMenu ? Val( page.exclude_from_sub_navigation ) : ( Val( page.exclude_from_navigation ) || Val( page.exclude_children_from_navigation ) );
 		if ( isManagedType || excludedFromNav ) {
 			return [];
 		}
@@ -656,6 +659,8 @@ component {
 			pageTypeObjData.page = pageTypeObjData.id = pageId;
 			_getPresideObject( pageType.getPresideObject() ).insertData( data=pageTypeObjData, versionNumber=versionNumber, insertManyToManyRecords=true, isDraft=arguments.isDraft, skipTrivialInterceptors=pageType.isSystemPageType() );
 		}
+
+		$announceInterception( "postAddSiteTreePage", pageTypeObjData );
 
 		if ( Len( Trim( pageId ) ) && arguments.audit ) {
 			var auditDetail = Duplicate( arguments );
@@ -815,6 +820,11 @@ component {
 			_getPresideObjectService().clearRelatedCaches( "page" );
 			_getPresideObjectService().clearRelatedCaches( existingPage.page_type );
 		}
+
+		var interceptionArgs              = arguments;
+		    interceptionArgs.existingPage = existingPage;
+
+		$announceInterception( "postEditSiteTreePage", interceptionArgs );
 
 		if ( updated && !arguments.skipAudit ) {
 			for( var p in existingPage ) { existingPage = p };
@@ -978,7 +988,7 @@ component {
 		for( var pageType in pageTypes ) {
 			var pageTypeId = pageType.getId();
 			if ( pageTypesService.isSystemPageType( pageTypeId ) && pageTypesService.isPageTypeAvailableToSiteTemplate( pageTypeId, site.template ?: "" ) ) {
-				var page = getPage( systemPage=pageTypeId );
+				var page = getPage( systemPage=pageTypeId, useCache=false );
 
 				if ( !page.recordCount ) {
 					_createSystemPage( pageType );
@@ -1323,13 +1333,12 @@ component {
 		var loginSvc   = _getLoginService();
 
 		if ( Len( Trim( parentType ) ) && parentType != "none" ) {
-			var parent = getPage( systemPage=parentType );
+			var parent = getPage( systemPage=parentType, useCache=false );
 			if ( !parent.recordCount ) {
-				_createSystemPage( _getPageTypesService().getPageType( parentType ) );
+				parent = _createSystemPage( _getPageTypesService().getPageType( parentType ) );
+			} else {
+				parent = parent.id;
 			}
-			parent = getPage( systemPage=parentType );
-
-			parent = parent.id ?: "";
 		}
 
 		var addPageArgs = {

@@ -25,7 +25,7 @@ component displayName="RulesEngine Expression Service" {
 	) {
 		_setFieldTypeService( fieldTypeService );
 		_setContextService( contextService );
-		_setExpressions( expressionReaderService.getExpressionsFromDirectories( expressionDirectories ) )
+		_setExpressions( expressionReaderService.getExpressionsFromDirectories( expressionDirectories ) );
 
 		return this;
 	}
@@ -201,7 +201,7 @@ component displayName="RulesEngine Expression Service" {
 	 * > Choose an event
 	 *
 	 * @audotodoc
-	 * @expressionId.hint ID of the expression who's field we want to get the label of
+	 * @expressionId.hint ID of the expression whose field we want to get the label of
 	 * @fieldName.hint    Name of the field
 	 */
 	public string function getDefaultFieldLabel( required string expressionId, required string fieldName ) {
@@ -267,9 +267,9 @@ component displayName="RulesEngine Expression Service" {
 	 * and configured fields.
 	 *
 	 * @autodoc               true
-	 * @expressionId.hint     The ID of the expression who's filters you wish to prepare
-	 * @objectName.hint       The object who's records are to be filtered
-	 * @configuredFields.hint A structure of fields configured for the expression instance who's filter we are preparing
+	 * @expressionId.hint     The ID of the expression whose filters you wish to prepare
+	 * @objectName.hint       The object whose records are to be filtered
+	 * @configuredFields.hint A structure of fields configured for the expression instance whose filter we are preparing
 	 * @filterPrefix.hint     An optional prefix to prepend to any property filters. This is useful when you are traversing the relationship tree and building filters within filters!
 	 */
 	public array function prepareExpressionFilters(
@@ -294,6 +294,10 @@ component displayName="RulesEngine Expression Service" {
 		eventArgs.append( expression.filterHandlerArgs ?: {} );
 		eventArgs.append( preProcessConfiguredFields( arguments.expressionId, arguments.configuredFields ) );
 
+		if ( Len( Trim( eventArgs.parentPropertyName ?: "" ) ) ) {
+			eventArgs.filterPrefix = ListAppend( eventArgs.filterPrefix, eventArgs.parentPropertyName, "$" );
+		}
+
 		var result = $getColdbox().runEvent(
 			  event          = handlerAction
 			, private        = true
@@ -313,6 +317,7 @@ component displayName="RulesEngine Expression Service" {
 	 * @expressionId.hint     ID of the expression to validate
 	 * @fields.hint           Struct of saved field configurations for the expression instance to validate
 	 * @context.hint          Context in which the expression is being used
+	 * @filterObject.hint     Object for which the expression is being used as a filter
 	 * @validationResult.hint [[api-validationresult]] object with which to record errors
 	 *
 	 */
@@ -321,6 +326,7 @@ component displayName="RulesEngine Expression Service" {
 		, required struct fields
 		, required string context
 		, required any    validationResult
+		,          string filterObject = ""
 	) {
 		var expression = _getRawExpression( arguments.expressionId, false );
 
@@ -329,9 +335,16 @@ component displayName="RulesEngine Expression Service" {
 			return false;
 		}
 
-		if ( !expression.contexts.findNoCase( arguments.context ) && !expression.contexts.findNoCase( "global" ) ) {
-			arguments.validationResult.setGeneralMessage( "The [#arguments.expressionId#] expression cannot be used in the [#arguments.context#] context" );
-			return false;
+		if ( arguments.filterObject.len() ) {
+			if ( !expression.filterObjects.findNoCase( arguments.filterObject ) ) {
+				arguments.validationResult.setGeneralMessage( "The [#arguments.expressionId#] expression cannot be used to filter the [#arguments.filterObject#] object" );
+				return false;
+			}
+		} else {
+			if ( !expression.contexts.findNoCase( arguments.context ) && !expression.contexts.findNoCase( "global" ) ) {
+				arguments.validationResult.setGeneralMessage( "The [#arguments.expressionId#] expression cannot be used in the [#arguments.context#] context" );
+				return false;
+			}
 		}
 
 		for ( var fieldName in expression.fields ) {
@@ -352,7 +365,7 @@ component displayName="RulesEngine Expression Service" {
 	 * and preprocesses all the field values ready for evaluation.
 	 *
 	 * @autodoc
-	 * @expressionId.hint     ID of the expression who's fields are configured
+	 * @expressionId.hint     ID of the expression whose fields are configured
 	 * @configuredFields.hint Saved field configuration for the expression instance
 	 *
 	 */
@@ -411,7 +424,7 @@ component displayName="RulesEngine Expression Service" {
 	 * Returns an array of configured objects that can be filtered by this expression
 	 *
 	 * @autodoc true
-	 * @expressionId.hint ID of the expression who's filterable objects you wish to retrieve
+	 * @expressionId.hint ID of the expression whose filterable objects you wish to retrieve
 	 */
 	public array function getFilterObjectsForExpression( required string expressionId ) {
 		var expression = _getRawExpression( expressionId, false );

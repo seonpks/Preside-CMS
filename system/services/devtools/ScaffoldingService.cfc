@@ -6,17 +6,23 @@ component singleton=true {
 	 * @pageTypesService.inject     PageTypesService
 	 * @presideObjectService.inject PresideObjectService
 	 * @appMapping.inject           coldbox:setting:appMapping
+	 * @notificationDao.inject      presidecms:object:admin_notification
+	 * @configuredTopics.inject     coldbox:setting:notificationTopics
 	 */
 	public any function init(
 		  required any    widgetsService
 		, required any    pageTypesService
 		, required any    presideObjectService
 		, required string appMapping
+		, required array  configuredTopics
+		, required any    notificationDao
 	) {
 		_setWidgetsService( arguments.widgetsService );
 		_setPageTypesService( arguments.pageTypesService );
 		_setPresideObjectService( arguments.presideObjectService );
+		_setConfiguredTopics( arguments.configuredTopics );
 		_setAppMapping( arguments.appMapping );
+		_setNotificationDao( arguments.notificationDao );
 
 		return this;
 	}
@@ -34,7 +40,6 @@ component singleton=true {
 			filesCreated.append( scaffoldWidgetViewletHandler( handlerName=arguments.id, subDir="widgets", extension=arguments.extension ) );
 			filesCreated.append( scaffoldView( viewName="index", subDir="widgets/#arguments.id#", extension=arguments.extension, args=ListToArray( arguments.options ) ) );
 			filesCreated.append( scaffoldWidgetPlaceholderView( widgetId=arguments.id, extension=arguments.extension, args=ListToArray( arguments.options ) ) );
-
 		} else {
 			filesCreated.append( scaffoldView( viewName=arguments.id, subDir="widgets", extension=arguments.extension, args=ListToArray( arguments.options ) ) );
 		}
@@ -199,7 +204,7 @@ component singleton=true {
 			fileContent &= "	private function #context#( event, rc, prc, args={} ) {" & _nl()
 			             & "		// TODO: create your handler logic here" & _nl()
 			             & "		return renderView( view='#viewPath#', args=args );" & _nl()
-			             & "	}" & _nl() & _nl()
+			             & "	}" & _nl() & _nl();
 		}
 
 		fileContent &= "}" & _nl();
@@ -316,7 +321,7 @@ component singleton=true {
 		}
 
 		fileContent &= _nl() & _nl();
-		fileContent &= "<cfoutput>##translateResource( uri='widgets.#arguments.widgetId#:title' )##</cfoutput>"
+		fileContent &= "<cfoutput>##translateResource( uri='widgets.#arguments.widgetId#:title' )##</cfoutput>";
 
 		_ensureDirectoryExists( GetDirectoryFromPath( filePath ) );
 		FileWrite( filePath, fileContent );
@@ -514,16 +519,19 @@ component singleton=true {
 	}
 
 	public array function scaffoldCrudAdmin(
-		  required string objectId
-		, required string objectName
-		, required string objectNamePlural
-		, required string handler
-		, required string permissionKey
-		, required string auditCategory
-		, required string i18nFile
-		, required string icon
-		, required string description
-		, required string extension
+		  required string  objectId
+		, required string  objectName
+		, required string  objectNamePlural
+		, required string  handler
+		, required string  permissionKey
+		, required string  auditCategory
+		, required string  i18nFile
+		, required string  icon
+		, required string  description
+		, required string  gridFields
+		, required boolean useDrafts
+		, required boolean allowBatchEdit
+		, required string  extension
 	) {
 		var templateVars = {
 			  objectId           = arguments.objectId
@@ -537,6 +545,9 @@ component singleton=true {
 			, overalldescription = arguments.description
 			, translationFile    = arguments.i18nFile
 			, permissionKey      = arguments.permissionKey
+			, gridFields         = arguments.gridFields
+			, useDrafts          = arguments.useDrafts
+			, allowBatchEdit     = arguments.allowBatchEdit
 			, labelfield         = _getPresideObjectService().getObjectAttribute( arguments.objectId, "labelfield" )
 		};
 
@@ -544,18 +555,25 @@ component singleton=true {
 			var resourceRoot = "/preside/system/services/devtools/scaffoldingResources/crudAdmin/";
 			var template     = FileRead( resourceRoot & arguments.templateName );
 
-			template = template.replaceNoCase( "${objectId}"          , templateVars.objectId          , "all" )
-			template = template.replaceNoCase( "${objectNamePlural}"  , templateVars.objectNamePlural  , "all" )
-			template = template.replaceNoCase( "${iconClass}"         , templateVars.iconClass         , "all" )
-			template = template.replaceNoCase( "${objectName}"        , templateVars.objectName        , "all" )
-			template = template.replaceNoCase( "${handlerRoot}"       , templateVars.handlerRoot       , "all" )
-			template = template.replaceNoCase( "${auditCategory}"     , templateVars.auditCategory     , "all" )
-			template = template.replaceNoCase( "${overalldescription}", templateVars.overalldescription, "all" )
-			template = template.replaceNoCase( "${translationFile}"   , templateVars.translationFile   , "all" )
-			template = template.replaceNoCase( "${pageIcon}"          , templateVars.pageIcon          , "all" )
-			template = template.replaceNoCase( "${permissionKey}"     , templateVars.permissionKey     , "all" )
-			template = template.replaceNoCase( "${labelfield}"        , templateVars.labelfield        , "all" )
-			template = template.replaceNoCase( "${handlerFolder}"     , templateVars.handlerFolder     , "all" )
+			template = template.replaceNoCase( "${objectId}"          , templateVars.objectId          , "all" );
+			template = template.replaceNoCase( "${objectNamePlural}"  , templateVars.objectNamePlural  , "all" );
+			template = template.replaceNoCase( "${iconClass}"         , templateVars.iconClass         , "all" );
+			template = template.replaceNoCase( "${objectName}"        , templateVars.objectName        , "all" );
+			template = template.replaceNoCase( "${handlerRoot}"       , templateVars.handlerRoot       , "all" );
+			template = template.replaceNoCase( "${auditCategory}"     , templateVars.auditCategory     , "all" );
+			template = template.replaceNoCase( "${overalldescription}", templateVars.overalldescription, "all" );
+			template = template.replaceNoCase( "${translationFile}"   , templateVars.translationFile   , "all" );
+			template = template.replaceNoCase( "${pageIcon}"          , templateVars.pageIcon          , "all" );
+			template = template.replaceNoCase( "${permissionKey}"     , templateVars.permissionKey     , "all" );
+			template = template.replaceNoCase( "${gridFields}"        , templateVars.gridFields        , "all" );
+			template = template.replaceNoCase( "${explodedGridFields}", SerializeJson( ListToArray( templateVars.gridFields ) ), "all" );
+			template = template.replaceNoCase( "${labelfield}"        , templateVars.labelfield        , "all" );
+			template = template.replaceNoCase( "${handlerFolder}"     , templateVars.handlerFolder     , "all" );
+
+			template = template.reReplaceNoCase( "// BEGIN DRAFTS(.*?)// END DRAFTS", ( templateVars.useDrafts ? "\1" : "" ), "all" );
+			template = template.reReplaceNoCase( "// BEGIN NO DRAFTS(.*?)// END NO DRAFTS", ( templateVars.useDrafts ? "" : "\1" ), "all" );
+
+			template = template.reReplaceNoCase( "// BEGIN BATCHEDIT(.*?)// END BATCHEDIT", ( templateVars.allowBatchEdit ? "\1" : "" ), "all" );
 
 			return template;
 		}
@@ -574,6 +592,10 @@ component singleton=true {
 		};
 		var scaffoldedFiles = [];
 
+		if ( arguments.allowBatchEdit ) {
+			templates.batcheditfieldcfm = { content=readAndReplaceTemplate( "batchEditField.cfm.txt" ), path="views/admin/#templateVars.handlerFolder#/batchEditField.cfm" };
+		}
+
 		_ensureExtensionExists( arguments.extension );
 		for( var templateId in templates ) {
 			var template = templates[ templateId ];
@@ -589,6 +611,51 @@ component singleton=true {
 
 		return scaffoldedFiles;
 
+	}
+
+	public array function scaffoldNotification( required string notificationId, string title="", string description="", string icon="fa-magic", string dataTableTitle="", string extension="" ) {
+		var filesCreated = _ensureExtensionExists( arguments.extension );
+		var i18nProps    = StructNew( "ordered" );
+		var topics       = _getConfiguredTopics();
+
+		if( arrayFindNoCase( topics, arguments.notificationId ) ){
+			throw( type="scaffoldwidget.notification.exists", message="The '#arguments.notificationId#' notification already exists" );
+		}
+
+		filesCreated.append( scaffoldNotificationViewletHandler( handlerName=arguments.notificationId, subDir="renderers/notifications", extension=arguments.extension ) );
+		filesCreated.append( scaffoldView( viewName="full", subDir="renderers/notifications/#arguments.notificationId#", extension=arguments.extension ) );
+
+		i18nProps["title"]=arguments.title;
+		i18nProps["description"]=arguments.description;
+		i18nProps["iconclass"]=arguments.icon;
+		i18nProps["datatabletitle"]=arguments.dataTableTitle;
+
+		filesCreated.append( scaffoldI18nPropertiesFile( bundleName=arguments.notificationId, subDir="notifications", extension=arguments.extension, properties=i18nProps ) );
+
+		// Append notification topic in config.cfc
+		arrayAppend( topics, arguments.notificationId );
+
+		return filesCreated;
+	}
+
+	public string function scaffoldNotificationViewletHandler( required string handlerName, string subDir="", string extension="" ) {
+		var root            = _getScaffoldRoot( arguments.extension );
+		var filePath        = root & "handlers/" & arguments.subDir & "/" & handlerName & ".cfc";
+		var viewPath        = arguments.subDir & "/" & handlerName & "/dataTable";
+		var fileContent     = "component {" & _nl()
+		                    & "	private function dataTable( event, rc, prc, args={} ) {" & _nl()
+		                    & "		// TODO: create your handler logic here" & _nl()
+		                    & "		return " & "translateResource( uri='notifications.#arguments.handlerName#:dataTableTitle' );" & _nl()
+		                    & "	}" & _nl()
+		                    & " private string function full( event, rc, prc, args={} ) {" & _nl()
+		                    & "		return renderView( view = '/renderers/notifications/#arguments.handlerName#/full', args = args );" & _nl()
+		                    & " }" & _nl()
+		                    & "}" & _nl();
+
+		_ensureDirectoryExists( GetDirectoryFromPath( filePath ) );
+		FileWrite( filePath, fileContent );
+
+		return filePath;
 	}
 
 // PRIVATE HELPERS
@@ -663,4 +730,17 @@ component singleton=true {
 		_appMapping = arguments.appMapping;
 	}
 
+	private any function _getNotificationDao() {
+		return _notificationDao;
+	}
+	private void function _setNotificationDao( required any notificationDao ) {
+		_notificationDao = arguments.notificationDao;
+	}
+
+	private any function _getConfiguredTopics() {
+		return _configuredTopics;
+	}
+	private void function _setConfiguredTopics( required any configuredTopics ) {
+		_configuredTopics = arguments.configuredTopics;
+	}
 }

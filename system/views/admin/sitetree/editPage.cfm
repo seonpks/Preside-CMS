@@ -1,7 +1,7 @@
 <cfscript>
 	page             = prc.page            ?: QueryNew('');
-	mainFormName     = prc.mainFormName    ?: ""
-	mergeFormName    = prc.mergeFormName   ?: ""
+	mainFormName     = prc.mainFormName    ?: "";
+	mergeFormName    = prc.mergeFormName   ?: "";
 	validationResult = rc.validationResult ?: "";
 	formId           = "editForm-" & CreateUUId();
 	editPagePrompt    = translateResource( uri="preside-objects.page:editRecord.prompt", defaultValue="" );
@@ -40,7 +40,6 @@
 		, isDraft          = IsTrue( page._version_is_draft ?: "" )
 		, baseUrl          = event.buildAdminLink( linkTo="sitetree.editPage", queryString="id=#pageId#&version=" )
 		, allVersionsUrl   = event.buildAdminLink( linkTo="sitetree.pageHistory", queryString="id=#pageId#" )
-		, publishUrl       = ( canPublish   ? event.buildAdminlink( linkTo="sitetree.publishPageAction", queryString="id=#pageId#" ) : "" )
 		, discardDraftsUrl = ( canSaveDraft ? event.buildAdminlink( linkTo="sitetree.discardDraftsAction", queryString="id=#pageId#" ) : "" )
 	} )#
 
@@ -159,13 +158,18 @@
 		<input type="hidden" name="id" value="#event.getValue( name='id', defaultValue='' )#" />
 
 		#renderForm(
-			  formName          = mainFormName
-			, mergeWithFormName = mergeFormName
-			, context           = "admin"
-			, formId            = formId
-			, savedData         = page
-			, validationResult  = validationResult
+			  formName                = mainFormName
+			, mergeWithFormName       = mergeFormName
+			, context                 = "admin"
+			, formId                  = formId
+			, savedData               = page
+			, validationResult        = validationResult
+			, stripPermissionedFields = true
+			, permissionContext       = "page"
+			, permissionContextKeys   = ( prc.pagePermissionContext ?: [] )
 		)#
+
+
 
 		<div class="form-actions row">
 			<div class="col-md-offset-2">

@@ -20,7 +20,7 @@ component extends="preside.system.base.SystemPresideObject" displayname="Email t
 	property name="attachments" relationship="many-to-many" relatedto="asset" relatedVia="email_template_attachment";
 
 	property name="email_blueprint"  relationship="many-to-one" relatedTo="email_blueprint";
-	property name="recipient_filter" relationship="many-to-one" relatedto="rules_engine_condition";
+	property name="recipient_filter" relationship="many-to-one" relatedto="rules_engine_condition" ondelete="cascade-if-no-cycle-check" onupdate="cascade-if-no-cycle-check";
 
 	property name="sending_method" type="string" dbtype="varchar" maxlength=20 required=false default="auto" enum="emailSendingMethod" ignoreChangesForVersioning=true;
 
@@ -36,4 +36,6 @@ component extends="preside.system.base.SystemPresideObject" displayname="Email t
 	property name="schedule_measure"        type="numeric" dbtype="int"                  required=false ignoreChangesForVersioning=true;
 	property name="schedule_sent"           type="boolean" dbtype="boolean"              required=false ignoreChangesForVersioning=true;
 	property name="schedule_next_send_date" type="date"    dbtype="datetime"             required=false ignoreChangesForVersioning=true;
+
+	property name="send_logs" relationship="one-to-many" relatedto="email_template_send_log" relationshipKey="email_template";
 }

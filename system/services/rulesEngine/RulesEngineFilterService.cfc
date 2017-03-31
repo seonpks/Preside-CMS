@@ -139,7 +139,7 @@ component displayName="Rules Engine Filter Service" {
 			  objectName      = arguments.objectName
 			, expressionArray = arguments.expressionArray
 		) );
-		args.groupby = args.groupBy ?: "#objectName#.id";
+		args.autoGroupBy = true;
 
 		args.delete( "expressionArray" );
 
@@ -181,6 +181,14 @@ component displayName="Rules Engine Filter Service" {
 		} catch ( any e ) {}
 
 		return [];
+	}
+
+	public query function getFavourites( required string objectName ) {
+		return $getPresideObject( "rules_engine_condition" ).selectData(
+			  selectFields = [ "id", "condition_name" ]
+			, filter       = { filter_object=arguments.objectName, is_favourite=true }
+			, orderBy      = "condition_name"
+		);
 	}
 
 // PRIVATE HELPERS

@@ -48,8 +48,23 @@ component displayName="Task Manager Service" {
 	}
 
 // PUBLIC API METHODS
-	public array function listTasks() {
-		return _getConfiguredTasks().keyArray();
+	public array function listTasks( string exclusivityGroup="" ) {
+		if ( !Len( Trim( arguments.exclusivityGroup ) ) ) {
+			return _getConfiguredTasks().keyArray();
+		}
+
+		var allTasks = _getConfiguredTasks();
+		var filtered = [];
+
+		for( var task in allTasks ) {
+
+			if ( ( allTasks[ task ].exclusivityGroup ?: "" ) == arguments.exclusivityGroup ) {
+				filtered.add( task );
+			}
+		}
+
+		return filtered;
+
 	}
 
 	public struct function getTask( required string taskKey ) {
@@ -102,15 +117,14 @@ component displayName="Task Manager Service" {
 		return 	_getConfiguredTasks().keyExists( arguments.taskKey );
 	}
 
-	public boolean function tasksAreRunning() {
-		var areRunning = false;
-
-		for( var taskKey in listTasks() ){
-			var taskRunning = taskIsRunning( taskKey );
-			areRunning = areRunning || taskRunning;
+	public boolean function tasksAreRunning( string exclusivityGroup="" ) {
+		for( var taskKey in listTasks( exclusivityGroup=arguments.exclusivityGroup ) ){
+			if ( taskIsRunning( taskKey ) ) {
+				return true
+			}
 		}
 
-		return areRunning;
+		return false;
 	}
 
 	public boolean function taskIsRunning( required string taskKey ) {
@@ -119,7 +133,7 @@ component displayName="Task Manager Service" {
 				var logger = _getLogger( taskKey=arguments.taskKey );
 
 				if ( logger.canError() ) {
-					logger.error( "Task run has expired for task [#arguments.taskKey#]." )
+					logger.error( "Task run has expired for task [#arguments.taskKey#]." );
 				}
 
 				markTaskAsCompleted(
@@ -175,19 +189,26 @@ component displayName="Task Manager Service" {
 	}
 
 	public array function getRunnableTasks() {
-		if ( tasksAreRunning() ) {
-			return [];
-		}
-
-		var runnableTasks = _getTaskDao().selectData(
+		var taskConfiguration = _getConfiguredTasks();
+		var runnableTasks     = [];
+		var groupsToRun       = {};
+		var nonRunningTasks   = _getTaskDao().selectData(
 			  selectFields = [ "task_key" ]
 			, filter       = "enabled = :enabled and is_running = :is_running and next_run < :next_run"
 			, filterParams = { enabled = true, is_running = false, next_run = _getOperationDate() }
 			, orderBy      = "priority desc"
-			, maxRows      = 1
 		);
 
-		return runnableTasks.recordCount ? ValueArray( runnableTasks.task_key ) : [];
+		for( var task in nonRunningTasks ) {
+			var exclusivityGroup = taskConfiguration[ task.task_key ].exclusivityGroup ?: "";
+
+			if ( exclusivityGroup == "none" || ( !groupsToRun.keyExists( exclusivityGroup ) && !tasksAreRunning( exclusivityGroup ) ) ) {
+				runnableTasks.append( task.task_key );
+				groupsToRun[ exclusivityGroup ] = 1;
+			}
+		}
+
+		return runnableTasks;
 	}
 
 	/**
@@ -476,6 +497,8 @@ component displayName="Task Manager Service" {
 		};
 
 		schedule action=action attributeCollection=args;
+
+		_deleteOldTaskManagerScheduledTasks( args.task );
 	}
 
 	public array function getAllTaskDetails() {
@@ -681,6 +704,19 @@ component displayName="Task Manager Service" {
 			, "/preside/system/services/taskmanager/lib/joda-time-2.9.4.jar"
 			, "/preside/system/services/taskmanager/lib/cron-1.0.jar"
 		];
+	}
+
+	private void function _deleteOldTaskManagerScheduledTasks( required string validTaskName ) {
+		var tasks       = "";
+		var taskPattern = "^PresideTaskManager_";
+
+		schedule action="list" returnvariable="tasks";
+
+		for( var task in tasks ) {
+			if ( task.task != arguments.validTaskName && task.task.reFindNoCase( taskPattern ) ) {
+				schedule action="delete" task=task.task;
+			}
+		}
 	}
 
 // GETTERS AND SETTERS

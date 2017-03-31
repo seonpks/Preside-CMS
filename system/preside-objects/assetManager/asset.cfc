@@ -4,7 +4,7 @@
  */
 component extends="preside.system.base.SystemPresideObject" labelfield="title" output=false displayName="Asset" {
 
-	property name="asset_folder" relationship="many-to-one"                          required=true   uniqueindexes="assetfolder|1";
+	property name="asset_folder" relationship="many-to-one"                          required=true   uniqueindexes="assetfolder|1" onupdate="cascade-if-no-cycle-check";
 
 	property name="title"             type="string"  dbtype="varchar" maxLength=150     required=true   uniqueindexes="assetfolder|2";
 	property name="storage_path"      type="string"  dbtype="varchar" maxLength=255     required=true   uniqueindexes="assetpath";
@@ -27,7 +27,7 @@ component extends="preside.system.base.SystemPresideObject" labelfield="title" o
 	property name="full_login_required"                  type="boolean" dbtype="boolean"               required=false default=false;
 	property name="grantaccess_to_all_logged_in_users"   type="boolean" dbtype="boolean"               required=false default=false;
 
-	property name="access_condition" relationship="many-to-one" relatedto="rules_engine_condition" required=false control="conditionPicker" ruleContext="webrequest";
+	property name="access_condition" relationship="many-to-one" relatedto="rules_engine_condition" required=false control="conditionPicker" ruleContext="webrequest" ondelete="cascade-if-no-cycle-check" onupdate="cascade-if-no-cycle-check";
 	property name="created_by"       relationship="many-to-one" relatedTo="security_user"          required=false generator="loggedInUserId" ondelete="cascade-if-no-cycle-check" onupdate="cascade-if-no-cycle-check";
 	property name="updated_by"       relationship="many-to-one" relatedTo="security_user"          required=false generator="loggedInUserId" ondelete="cascade-if-no-cycle-check" onupdate="cascade-if-no-cycle-check";
 }

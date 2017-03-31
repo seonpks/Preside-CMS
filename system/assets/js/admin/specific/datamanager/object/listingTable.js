@@ -20,6 +20,8 @@
 			  , showFilters
 			  , showSimpleSearch
 			  , dtSettings
+			  , getFavourites
+			  , setFavourites
 			  , object              = tableSettings.objectName     || cfrequest.objectName     || ""
 			  , datasourceUrl       = tableSettings.datasourceUrl  || cfrequest.datasourceUrl  || buildAjaxLink( "dataManager.getObjectRecordsForAjaxDataTables", { id : object } )
 			  , isMultilingual      = tableSettings.isMultilingual || cfrequest.isMultilingual || false
@@ -28,10 +30,12 @@
 			  , objectTitle         = tableSettings.objectTitle    || cfrequest.objectTitle    || i18n.translateResource( "preside-objects." + object + ":title" ).toLowerCase()
 			  , allowSearch         = tableSettings.allowSearch    || cfrequest.allowSearch
 			  , allowFilter         = tableSettings.allowFilter    || cfrequest.allowFilter
+			  , favouritesUrl       = tableSettings.favouritesUrl  || cfrequest.favouritesUrl || buildAjaxLink( "rulesEngine.ajaxDataGridFavourites", { objectName : object } )
 			  , clickableRows       = typeof tableSettings.clickableRows   === "undefined" ? ( typeof cfrequest.clickableRows   === "undefined" ? true : cfrequest.clickableRows   ) : tableSettings.clickableRows
 			  , useMultiActions     = typeof tableSettings.useMultiActions === "undefined" ? ( typeof cfrequest.useMultiActions === "undefined" ? true : cfrequest.useMultiActions ) : tableSettings.useMultiActions
 			  , $filterDiv          = $( '#' + tableId + '-filter' )
-			  , enabledContextHotkeys;
+			  , $favouritesDiv      = $( '#' + tableId + '-favourites' )
+			  , enabledContextHotkeys, refreshFavourites;
 
 			setupDatatable = function(){
 				var $tableHeaders        = $listingTable.find( 'thead > tr > th')
@@ -179,14 +183,20 @@
 					fnServerParams : function( aoData ) {
 						if ( allowFilter ) {
 							aoData.push( { "name": "sFilterExpression", "value": $filterDiv.find( "[name=filter]" ).val() } );
-							aoData.push( { "name": "sSavedFilterExpressions", "value": $filterDiv.find( "[name=filters]" ).val() } );
+							var favourites = getFavourites();
+							if ( favourites && favourites.length ) {
+								aoData.push( { "name": "sSavedFilterExpressions", "value": favourites } );
+							} else {
+								aoData.push( { "name": "sSavedFilterExpressions", "value": $filterDiv.find( "[name=filters]" ).val() } );
+							}
 						}
 					},
 					fnCookieCallback: function( sName, oData, sExpires, sPath ) {
 						if ( allowFilter ) {
 							oData.oFilter = {
-								  filter  : $filterDiv.find( "[name=filter]" ).val()
-								, filters : $filterDiv.find( "[name=filters]" ).val()
+								  filter     : $filterDiv.find( "[name=filter]" ).val()
+								, filters    : $filterDiv.find( "[name=filters]" ).val()
+								, favourites : getFavourites()
 							};
 						}
 
@@ -273,6 +283,19 @@
 
 				$searchContainer.prepend( $searchTitle );
 				$searchContainer.prepend( $filterLink );
+				if ( $favouritesDiv.length ) {
+					$searchContainer.append( $favouritesDiv );
+					$favouritesDiv.removeClass( "hide" );
+					$favouritesDiv.on( "click", ".filter", function( e ){
+						e.preventDefault();
+						var $filter = $( this )
+						  , $otherFilters = $filter.siblings( ".filter" );
+
+						$filter.toggleClass( "active" ).find( ":focus" ).blur();
+
+						datatable.fnDraw();
+					} );
+				}
 				$searchContainer.parent().append( $filterDiv );
 
 				$filterDiv.hide().removeClass( "hide" ).find( ".well" ).removeClass( "well" );
@@ -299,6 +322,47 @@
 				if ( settings.oLoadedState !== null && typeof settings.oLoadedState.oFilter !== "undefined" ) {
 					if ( settings.oLoadedState.oFilter.filters.length || settings.oLoadedState.oFilter.filter.length ) {
 						prePopulateFilter( settings.oLoadedState.oFilter.filters, settings.oLoadedState.oFilter.filter );
+					} else if ( settings.oLoadedState.oFilter.favourites && settings.oLoadedState.oFilter.favourites.length ) {
+						setFavourites( settings.oLoadedState.oFilter.favourites );
+					}
+				}
+			};
+
+			refreshFavourites = function(){
+				$.ajax({
+					  url     : favouritesUrl
+					, cache   : false
+					, success : function( resp ) {
+						$favouritesDiv.fadeOut( 200, function(){
+							$favouritesDiv.html( resp ).fadeIn( 200 );
+						} )
+					  }
+				});
+			};
+
+			getFavourites = function() {
+				if ( $favouritesDiv.length ) {
+					var favourites = [];
+
+					$favouritesDiv.find( ".filter.active" ).each( function(){
+						favourites.push( $( this ).data( "filterId" ) );
+					} );
+
+					return favourites.join( "," );
+				}
+
+				return "";
+			};
+
+			setFavourites = function( ids ) {
+				var i;
+
+				if ( $favouritesDiv.length ) {
+					ids = ids.split( "," );
+					$favouritesDiv.find( ".filter" ).removeClass( "active" );
+
+					for( i=0; i<ids.length; i++ ) {
+						$favouritesDiv.find( ".filter[ data-filter-id='" + ids[i] + "' ]" ).addClass( "active" );
 					}
 				}
 			};
@@ -340,6 +404,7 @@
 				var $searchContainer = $( dtSettings.aanFeatures.f[0] );
 				$searchContainer.fadeOut( 100, function(){
 					$searchContainer.find( "input.data-table-search" ).val( "" );
+					setFavourites( "" );
 					datatable.fnFilter("");
 					$filterDiv.fadeIn( 100 );
 				} );
@@ -352,6 +417,7 @@
 				$filterDiv.fadeOut( 100, function(){
 					$filterDiv.find( "[name=filter]" ).data( "conditionBuilder" ).clear();
 					$filterDiv.find( "[name=filters]" ).data( "uberSelect").clear();
+					refreshFavourites();
 					datatable.fnDraw();
 					$searchContainer.fadeIn( 100 );
 				} );
@@ -366,7 +432,7 @@
 					  , modalTitle          = i18n.translateResource( "cms:rulesEngine.save.filter.modal" )
 					  , modalOptions        = {
 							title     : modalTitle,
-							className : "",
+							className : "filter-quick-save-modal",
 							buttons   : {
 								cancel : {
 									  label     : '<i class="fa fa-reply"></i> ' + i18n.translateResource( "cms:cancel.btn" )

@@ -4,7 +4,12 @@ component extends="coldbox.system.interceptors.SES" output=false {
 	property name="systemConfigurationService"       inject="delayedInjector:systemConfigurationService";
 	property name="urlRedirectsService"              inject="delayedInjector:urlRedirectsService";
 	property name="siteService"                      inject="delayedInjector:siteService";
+	property name="tenancyService"                   inject="delayedInjector:tenancyService";
 	property name="adminRouteHandler"                inject="delayedInjector:adminRouteHandler";
+	property name="assetRouteHandler"                inject="delayedInjector:assetRouteHandler";
+	property name="plainStoredFileRouteHandler"      inject="delayedInjector:plainStoredFileRouteHandler";
+	property name="staticAssetRouteHandler"          inject="delayedInjector:staticAssetRouteHandler";
+	property name="restRouteHandler"                 inject="delayedInjector:restRouteHandler";
 	property name="multilingualPresideObjectService" inject="delayedInjector:multilingualPresideObjectService";
 	property name="multilingualIgnoredUrlPatterns"   inject="coldbox:setting:multilingual.ignoredUrlPatterns";
 
@@ -18,6 +23,7 @@ component extends="coldbox.system.interceptors.SES" output=false {
 	public void function onRequestCapture( event, interceptData ) output=false {
 		_checkRedirectDomains( argumentCollection=arguments );
 		_detectIncomingSite  ( argumentCollection=arguments );
+		_setCustomTenants    ( argumentCollection=arguments );
 		_checkUrlRedirects   ( argumentCollection=arguments );
 		_detectLanguage      ( argumentCollection=arguments );
 		_setPresideUrlPath   ( argumentCollection=arguments );
@@ -73,18 +79,30 @@ component extends="coldbox.system.interceptors.SES" output=false {
 
 // private utility methods
 	private void function _detectIncomingSite( event, interceptData ) output=false {
-		var pathInfo = super.getCGIElement( "path_info", event );
-		var domain   = super.getCGIElement( "server_name", event );
-		var site     = "";
+		var pathInfo       = super.getCGIElement( "path_info", event );
+		var domain         = super.getCGIElement( "server_name", event );
+		var explicitSiteId = event.getValue( name="_sid", defaultValue="" ).trim();
+		var site           = {};
+
+		if ( explicitSiteId.len() ) {
+			site = siteService.getSite( explicitSiteId );
+		}
 
 		if ( adminRouteHandler.match( pathInfo, event ) && event.isAdminUser() ) {
-			site = siteService.getActiveAdminSite( domain=domain );
+			if ( site.count() ) {
+				siteService.setActiveAdminSite( site.id );
+			} else {
+				site = siteService.getActiveAdminSite( domain=domain );
+			}
 		} else {
-			site = siteService.matchSite(
-				  domain = domain
-				, path   = pathInfo
-			);
-			if ( Len( Trim( site.id ?: "" ) ) ) {
+			if ( !site.count() ) {
+				site = siteService.matchSite(
+					  domain = domain
+					, path   = pathInfo
+				);
+			}
+
+			if ( Len( Trim( site.id ?: "" ) ) && event.isAdminUser() && !_isNonSiteSpecificRequest( pathInfo, event ) ) {
 				siteService.setActiveAdminSite( site.id );
 			}
 
@@ -99,6 +117,10 @@ component extends="coldbox.system.interceptors.SES" output=false {
 		}
 
 		event.setSite( site );
+	}
+
+	private void function _setCustomTenants() {
+		tenancyService.setRequestTenantIds();
 	}
 
 	private void function _detectLanguage( event, interceptor ) output=false {
@@ -232,5 +254,12 @@ component extends="coldbox.system.interceptors.SES" output=false {
 			}
 			getController().setNextEvent( url=redirectUrl, statusCode=301 );
 		}
+	}
+
+	private boolean function _isNonSiteSpecificRequest( required string pathInfo, required any event ) {
+		return assetRouteHandler.match( pathInfo, event )
+		    || plainStoredFileRouteHandler.match( pathInfo, event )
+		    || staticAssetRouteHandler.match( pathInfo, event )
+		    || restRouteHandler.match( pathInfo, event );
 	}
 }

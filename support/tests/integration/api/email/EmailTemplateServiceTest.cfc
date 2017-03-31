@@ -230,6 +230,32 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 
 			} );
 
+			it( "should set the schedule_next_send_date field when the schedule type is 'repeat' and next_send_date is right now", function(){
+				var service      = _getService();
+				var templateId   = CreateUUId();
+				var nowish       = Now();
+				var nextSendDate = DateAdd( "d", 2, nowish );
+				var template = {
+					  sending_method          = "scheduled"
+					, schedule_type           = "repeat"
+					, schedule_measure        = 2
+					, schedule_unit           = "day"
+					, schedule_start_date     = DateAdd( "d", -4, nowish )
+					, schedule_end_date       = ""
+					, schedule_next_send_date = nowish
+				};
+
+				service.$( "getTemplate" ).$args( templateId ).$results( template );
+				service.$( "saveTemplate", templateId );
+				service.$( "_getNow", nowish );
+
+				service.updateScheduledSendFields( templateId );
+
+				expect( service.$callLog().saveTemplate.len() ).toBe( 1 );
+				expect( service.$callLog().saveTemplate[1].id ?: "" ).toBe( templateId );
+				expect( service.$callLog().saveTemplate[1].template.schedule_next_send_date ?: "" ).toBe( nextSendDate );
+			} );
+
 			it( "should set the schedule_next_send_date field when the schedule type is 'repeat' and next_send_date later than newly calculated send date", function(){
 				var service      = _getService();
 				var templateId   = CreateUUId();
@@ -584,16 +610,17 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 				expect( service.getTemplate( id=template, version=version ) ).toBe( expected );
 			} );
 
-			it( "should return recipient_type, filter and layout fields from the template's blueprint when the template has a non-empty blueprint", function(){
+			it( "should return recipient_type, filter, service_provider and layout fields from the template's blueprint when the template has a non-empty blueprint", function(){
 				var service       = _getService();
 				var template      = CreateUUId();
 				var mockResult    = QueryNew( 'email_blueprint', 'varchar', [[CreateUUId()]]);
-				var mockBlueprint = QueryNew( 'recipient_type,layout,recipient_filter', 'varchar,varchar,varchar', [[CreateUUId(),CreateUUId(),CreateUUId()]]);
+				var mockBlueprint = QueryNew( 'recipient_type,layout,recipient_filter,service_provider', 'varchar,varchar,varchar,varchar', [[CreateUUId(),CreateUUId(),CreateUUId(),CreateUUId()]]);
 				var expected      = {
 					  email_blueprint  = mockResult.email_blueprint
 					, recipient_type   = mockBlueprint.recipient_type
 					, layout           = mockBlueprint.layout
 					, blueprint_filter = mockBlueprint.recipient_filter
+					, service_provider = mockBlueprint.service_provider
 				};
 
 				mockTemplateDao.$( "selectData" ).$args( id=template, allowDraftVersions=false, fromversionTable=false, specificVersion=0 ).$results( mockResult );
@@ -1113,17 +1140,18 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 		} );
 
 		describe( "listDueOneTimeScheduleTemplates()", function(){
-			it( "should fetch all the templates using 'fixeddate' schedule who have not been sent and who's send date is in the past", function(){
+			it( "should fetch all the templates using 'fixeddate' schedule who have not been sent and whose send date is in the past", function(){
 				var service = _getService();
 				var templateRecords = QueryNew( 'id', 'varchar', [[CreateUUId()], [CreateUUId()]] );
 				var nowish = Now();
 
 				service.$( "_getNow", nowish );
 				mockTemplateDao.$( "selectData" ).$args(
-					  selectFields = [ "id" ]
-					, filter       = { sending_method="scheduled", schedule_type="fixeddate", schedule_sent=false }
-					, extraFilters = [ { filter="schedule_date <= :schedule_date", filterParams={ schedule_date=nowish } } ]
-					, orderby      = "schedule_date"
+					  selectFields       = [ "id" ]
+					, filter             = { sending_method="scheduled", schedule_type="fixeddate", schedule_sent=false }
+					, extraFilters       = [ { filter="schedule_date <= :schedule_date", filterParams={ schedule_date=nowish } } ]
+					, orderby            = "schedule_date"
+					, allowDraftVersions = false
 				).$results( templateRecords );
 
 				expect( service.listDueOneTimeScheduleTemplates() ).toBe( ValueArray( templateRecords.id ) );
@@ -1131,17 +1159,18 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 		} );
 
 		describe( "listDueRepeatedScheduleTemplates()", function(){
-			it( "should fetch all the templates using 'repeat' schedule who's next send date is in the past and when current date is between start and end date", function(){
+			it( "should fetch all the templates using 'repeat' schedule whose next send date is in the past and when current date is between start and end date", function(){
 				var service = _getService();
 				var templateRecords = QueryNew( 'id', 'varchar', [[CreateUUId()], [CreateUUId()]] );
 				var nowish = Now();
 
 				service.$( "_getNow", nowish );
 				mockTemplateDao.$( "selectData" ).$args(
-					  selectFields = [ "id" ]
-					, filter       = { sending_method="scheduled", schedule_type="repeat" }
-					, extraFilters = [ { filter="schedule_next_send_date <= :schedule_next_send_date", filterParams={ schedule_next_send_date=nowish } } ]
-					, orderby      = "schedule_next_send_date"
+					  selectFields       = [ "id" ]
+					, filter             = { sending_method="scheduled", schedule_type="repeat" }
+					, extraFilters       = [ { filter="schedule_next_send_date <= :schedule_next_send_date", filterParams={ schedule_next_send_date=nowish } } ]
+					, orderby            = "schedule_next_send_date"
+					, allowDraftVersions = false
 				).$results( templateRecords );
 
 				expect( service.listDueRepeatedScheduleTemplates() ).toBe( ValueArray( templateRecords.id ) );
@@ -1152,10 +1181,10 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 			it( "should return an array of attachment binaries & titles using the asset manager service with configured template attachments", function(){
 				var service    = _getService();
 				var templateId = CreateUUId();
-				var assets     = QueryNew( 'id,title', 'varchar,varchar', [
-					  [ CreateUUId(), "Title 1" ]
-					, [ CreateUUId(), "Title 2" ]
-					, [ CreateUUId(), "Title 3" ]
+				var assets     = QueryNew( 'id,title,asset_type', 'varchar,varchar,varchar', [
+					  [ CreateUUId(), "Title 1", "pdf" ]
+					, [ CreateUUId(), "Title 2", "pdf" ]
+					, [ CreateUUId(), "Title 3", "pdf" ]
 				] );
 				var binaries = [
 					  ToBinary( ToBase64( CreateUUId() ) )
@@ -1167,18 +1196,19 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 				for( var i=1; i<=assets.recordCount; i++ ) {
 					expected.append({
 						  binary          = binaries[ i ]
-						, name            = assets.title[ i ]
+						, name            = assets.title[ i ] & ".pdf"
 						, removeAfterSend = false
 					});
 					mockAssetManagerService.$( "getAssetBinary" ).$args(
 						  id             = assets.id[ i ]
 						, throwOnMissing = false
 					).$results( binaries[ i ] );
+					mockAssetManagerService.$( "getAssetType", { extension="pdf" } );
 				}
 
 				mockTemplateDao.$( "selectData" ).$args(
 					  id           = templateId
-					, selectFields = [ "attachments.id", "attachments.title" ]
+					, selectFields = [ "attachments.id", "attachments.title", "attachments.asset_type" ]
 					, orderBy      = "email_template_attachment.sort_order"
 				).$results( assets );
 
@@ -1187,6 +1217,170 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 			} );
 		} );
 
+		describe( "getSentCount()", function(){
+			it( "should return count of sends for the given template for all time when no date range passed", function(){
+				var service    = _getService();
+				var templateId = CreateUUId();
+				var stats      = QueryNew( 'sent_count', 'int', [[635]] );
+
+				mockTemplateDao.$( "selectData" ).$args(
+					  selectFields = [ "Count( send_logs.id ) as sent_count" ]
+					, filter       = { id=templateId, "send_logs.sent"=true }
+					, forceJoins   = "inner"
+					, extraFilters = []
+				).$results( stats );
+
+				expect( service.getSentCount( templateId ) ).toBe( 635 );
+			} );
+
+			it( "should add date filters when dateFrom and dateTo passed", function(){
+				var service    = _getService();
+				var templateId = CreateUUId();
+				var stats      = QueryNew( 'sent_count', 'int', [[23]] );
+				var dateFrom   = "1900-01-01";
+				var dateTo   = "1999-06-29";
+
+				mockTemplateDao.$( "selectData" ).$args(
+					  selectFields = [ "Count( send_logs.id ) as sent_count" ]
+					, filter       = { id=templateId, "send_logs.sent"=true }
+					, forceJoins   = "inner"
+					, extraFilters = [
+						  { filter="send_logs.sent_date >= :dateFrom", filterParams={ dateFrom={ type="cf_sql_timestamp", value=dateFrom } } }
+						, { filter="send_logs.sent_date <= :dateTo"  , filterParams={ dateTo={ type="cf_sql_timestamp", value=dateTo } } }
+					]
+				).$results( stats );
+
+				expect( service.getSentCount( templateId, dateFrom, dateTo ) ).toBe( 23 );
+			} );
+		} );
+
+		describe( "getDeliveredCount()", function(){
+			it( "should return count of successful deliveries for the given template for all time when no date range passed", function(){
+				var service    = _getService();
+				var templateId = CreateUUId();
+				var stats      = QueryNew( 'delivered_count', 'int', [[635]] );
+
+				mockTemplateDao.$( "selectData" ).$args(
+					  selectFields = [ "Count( send_logs.id ) as delivered_count" ]
+					, filter       = { id=templateId, "send_logs.delivered"=true }
+					, forceJoins   = "inner"
+					, extraFilters = []
+				).$results( stats );
+
+				expect( service.getDeliveredCount( templateId ) ).toBe( 635 );
+			} );
+
+			it( "should add date filters when dateFrom and dateTo passed", function(){
+				var service    = _getService();
+				var templateId = CreateUUId();
+				var stats      = QueryNew( 'delivered_count', 'int', [[23]] );
+				var dateFrom   = "1900-01-01";
+				var dateTo   = "1999-06-29";
+
+				mockTemplateDao.$( "selectData" ).$args(
+					  selectFields = [ "Count( send_logs.id ) as delivered_count" ]
+					, filter       = { id=templateId, "send_logs.delivered"=true }
+					, forceJoins   = "inner"
+					, extraFilters = [
+						  { filter="send_logs.delivered_date >= :dateFrom", filterParams={ dateFrom={ type="cf_sql_timestamp", value=dateFrom } } }
+						, { filter="send_logs.delivered_date <= :dateTo"  , filterParams={ dateTo={ type="cf_sql_timestamp", value=dateTo } } }
+					]
+				).$results( stats );
+
+				expect( service.getDeliveredCount( templateId, dateFrom, dateTo ) ).toBe( 23 );
+			} );
+		} );
+
+		describe( "getOpenedCount()", function(){
+			it( "should return count of successful opens for the given template for all time when no date range passed", function(){
+				var service    = _getService();
+				var templateId = CreateUUId();
+				var stats      = QueryNew( 'opened_count', 'int', [[635]] );
+
+				mockTemplateDao.$( "selectData" ).$args(
+					  selectFields = [ "Count( send_logs.id ) as opened_count" ]
+					, filter       = { id=templateId, "send_logs.opened"=true }
+					, forceJoins   = "inner"
+					, extraFilters = []
+				).$results( stats );
+
+				expect( service.getOpenedCount( templateId ) ).toBe( 635 );
+			} );
+
+			it( "should add date filters when dateFrom and dateTo passed", function(){
+				var service    = _getService();
+				var templateId = CreateUUId();
+				var stats      = QueryNew( 'opened_count', 'int', [[23]] );
+				var dateFrom   = "1900-01-01";
+				var dateTo   = "1999-06-29";
+
+				mockTemplateDao.$( "selectData" ).$args(
+					  selectFields = [ "Count( send_logs.id ) as opened_count" ]
+					, filter       = { id=templateId, "send_logs.opened"=true }
+					, forceJoins   = "inner"
+					, extraFilters = [
+						  { filter="send_logs.opened_date >= :dateFrom", filterParams={ dateFrom={ type="cf_sql_timestamp", value=dateFrom } } }
+						, { filter="send_logs.opened_date <= :dateTo"  , filterParams={ dateTo={ type="cf_sql_timestamp", value=dateTo } } }
+					]
+				).$results( stats );
+
+				expect( service.getOpenedCount( templateId, dateFrom, dateTo ) ).toBe( 23 );
+			} );
+		} );
+
+		describe( "getFailedCount()", function(){
+			it( "should return count of successful opens for the given template for all time when no date range passed", function(){
+				var service    = _getService();
+				var templateId = CreateUUId();
+				var stats      = QueryNew( 'failed_count', 'int', [[635]] );
+
+				mockTemplateDao.$( "selectData" ).$args(
+					  selectFields = [ "Count( send_logs.id ) as failed_count" ]
+					, filter       = { id=templateId, "send_logs.failed"=true }
+					, forceJoins   = "inner"
+					, extraFilters = []
+				).$results( stats );
+
+				expect( service.getFailedCount( templateId ) ).toBe( 635 );
+			} );
+
+			it( "should add date filters when dateFrom and dateTo passed", function(){
+				var service    = _getService();
+				var templateId = CreateUUId();
+				var stats      = QueryNew( 'failed_count', 'int', [[23]] );
+				var dateFrom   = "1900-01-01";
+				var dateTo   = "1999-06-29";
+
+				mockTemplateDao.$( "selectData" ).$args(
+					  selectFields = [ "Count( send_logs.id ) as failed_count" ]
+					, filter       = { id=templateId, "send_logs.failed"=true }
+					, forceJoins   = "inner"
+					, extraFilters = [
+						  { filter="send_logs.failed_date >= :dateFrom", filterParams={ dateFrom={ type="cf_sql_timestamp", value=dateFrom } } }
+						, { filter="send_logs.failed_date <= :dateTo"  , filterParams={ dateTo={ type="cf_sql_timestamp", value=dateTo } } }
+					]
+				).$results( stats );
+
+				expect( service.getFailedCount( templateId, dateFrom, dateTo ) ).toBe( 23 );
+			} );
+		} );
+
+		describe( "getStats()", function(){
+			it( "should get counts and return in a struct based on args passed", function(){
+				var service    = _getService();
+				var templateId = CreateUUId();
+				var dateFrom   = "2017-06-12";
+				var dateTo     = "2017-07-19";
+				var stats      = { sent=4985, delivered=4980, failed=5, opened=234 };
+
+				service.$( "getSentCount" ).$args( templateId=templateId, dateFrom=dateFrom, dateTo=dateTo ).$results( stats.sent );
+				service.$( "getDeliveredCount" ).$args( templateId=templateId, dateFrom=dateFrom, dateTo=dateTo ).$results( stats.delivered );
+				service.$( "getFailedCount" ).$args( templateId=templateId, dateFrom=dateFrom, dateTo=dateTo ).$results( stats.failed );
+				service.$( "getOpenedCount" ).$args( templateId=templateId, dateFrom=dateFrom, dateTo=dateTo ).$results( stats.opened );
+
+				expect( service.getStats( templateId=templateId, dateFrom=dateFrom, dateTo=dateTo ) ).toBe( stats );
+			} );
+		} );
 	}
 
 	private any function _getService( boolean initialize=true ) {

@@ -18,6 +18,7 @@ component extends="coldbox.system.web.context.RequestContextDecorator" output=fa
 
 // URL related
 	public void function setSite( required struct site ) output=false {
+		getModel( "tenancyService" ).setTenantId( tenant="site", id=( site.id ?: "" ) );
 		getRequestContext().setValue(
 			  name    = "_site"
 			, value   =  arguments.site
@@ -38,7 +39,7 @@ component extends="coldbox.system.web.context.RequestContextDecorator" output=fa
 	public string function getSiteUrl( string siteId="", boolean includePath=true, boolean includeLanguageSlug=true ) output=false {
 		var fetchSite = Len( Trim( arguments.siteId ) ) && arguments.siteId != getSiteId();
 		var site      = fetchSite ? getModel( "siteService" ).getSite( arguments.siteId ) : getSite();
-		var siteUrl   = ( site.protocol ?: "http" ) & "://" & ( site.domain ?: cgi.server_name );
+		var siteUrl   = ( site.protocol ?: "http" ) & "://" & ( fetchSite ? ( site.domain ?: cgi.server_name ) : cgi.server_name );
 
 		if ( cgi.server_port != 80 ) {
 			siteUrl &= ":#cgi.server_port#";
@@ -79,8 +80,12 @@ component extends="coldbox.system.web.context.RequestContextDecorator" output=fa
 		return site.id ?: "";
 	}
 
-	public string function buildLink() output=false {
+	public string function buildLink( string siteId="", string queryString="" ) output=false {
 		var prc = getRequestContext().getCollection( private=true );
+
+		if ( arguments.siteId.len() ) {
+			arguments.queryString = ListPrepend( arguments.queryString, "_sid=" & arguments.siteId, "&" );
+		}
 
 		announceInterception(
 			  state         = "onBuildLink"
@@ -98,7 +103,7 @@ component extends="coldbox.system.web.context.RequestContextDecorator" output=fa
 	}
 
 	public string function getProtocol() output=false {
-		return cgi.server_protocol contains "https" ? "https" : "http";
+		return ( cgi.https ?: "" ) == "on" ? "https" : "http";
 	}
 
 	public string function getServerName() output=false {
@@ -139,14 +144,19 @@ component extends="coldbox.system.web.context.RequestContextDecorator" output=fa
 		return collection;
 	}
 
-	public struct function getCollectionForForm( string formName="" ) output=false {
+	public struct function getCollectionForForm(
+		  string  formName                = ""
+		, boolean stripPermissionedFields = true
+		, string  permissionContext       = ""
+		, array   permissionContextKeys   = []
+	) output=false {
 		var formNames    = Len( Trim( arguments.formName ) ) ? [ arguments.formName ] : this.getSubmittedPresideForms();
 		var formsService = getModel( "formsService" );
 		var rc           = getRequestContext().getCollection();
 		var collection   = {};
 
 		for( var name in formNames ) {
-			var formFields = formsService.listFields( name );
+			var formFields = formsService.listFields( argumentCollection=arguments, formName=name );
 			for( var field in formFields ){
 				collection[ field ] = ( rc[ field ] ?: "" );
 			}
@@ -162,11 +172,11 @@ component extends="coldbox.system.web.context.RequestContextDecorator" output=fa
 	}
 
 // Admin specific
-	public string function buildAdminLink( string linkTo="", string queryString="" ) output=false {
+	public string function buildAdminLink( string linkTo="", string queryString="", string siteId=this.getSiteId() ) output=false {
 		arguments.linkTo = ListAppend( "admin", arguments.linkTo, "." );
 
 		if ( isActionRequest( arguments.linkTo ) ) {
-			arguments.queryString = ListAppend( arguments.queryString, "csrfToken=" & this.getCsrfToken(), "&" );
+			arguments.queryString = ListPrepend( arguments.queryString, "csrfToken=" & this.getCsrfToken(), "&" );
 		}
 
 		return buildLink( argumentCollection = arguments );
@@ -296,7 +306,7 @@ component extends="coldbox.system.web.context.RequestContextDecorator" output=fa
 	}
 
 	public any function getModel( required string beanName ) output=false {
-		var singletons = [ "siteService", "sitetreeService", "formsService", "systemConfigurationService", "loginService", "AuditService", "csrfProtectionService", "websiteLoginService", "websitePermissionService", "multilingualPresideObjectService" ];
+		var singletons = [ "siteService", "sitetreeService", "formsService", "systemConfigurationService", "loginService", "AuditService", "csrfProtectionService", "websiteLoginService", "websitePermissionService", "multilingualPresideObjectService", "tenancyService" ];
 
 		if ( singletons.findNoCase( arguments.beanName ) ) {
 			var args = arguments;

@@ -10,13 +10,15 @@ component {
 	/**
 	 * @presideObjectService.inject PresideObjectService
 	 * @contentRenderer.inject      ContentRendererService
+	 * @labelRendererService.inject LabelRendererService
 	 * @i18nPlugin.inject           coldbox:plugin:i18n
 	 * @permissionService.inject    PermissionService
 	 * @siteService.inject          SiteService
 	 */
-	public any function init( required any presideObjectService, required any contentRenderer, required any i18nPlugin, required any permissionService, required any siteService ) {
+	public any function init( required any presideObjectService, required any contentRenderer, required any labelRendererService, required any i18nPlugin, required any permissionService, required any siteService ) {
 		_setPresideObjectService( arguments.presideObjectService );
 		_setContentRenderer( arguments.contentRenderer );
+		_setLabelRendererService( arguments.labelRendererService );
 		_setI18nPlugin( arguments.i18nPlugin );
 		_setPermissionService( arguments.permissionService );
 		_setSiteService( arguments.siteService );
@@ -205,7 +207,7 @@ component {
 			, orderBy            = _prepareOrderByForObject( arguments.objectName, arguments.orderBy )
 			, filter             = arguments.filter
 			, filterParams       = arguments.filterParams
-			, groupBy            = "#arguments.objectName#.id"
+			, autoGroupBy        = true
 			, allowDraftVersions = true
 			, extraFilters       = arguments.extraFilters
 		};
@@ -285,6 +287,8 @@ component {
 		, required array  sourceIds
 		, required string value
 		,          string multiEditBehaviour = "append"
+		,          string auditAction        = "datamanager_batch_edit_record"
+		,          string auditCategory      = "datamanager"
 	) {
 		var pobjService  = _getPresideObjectService();
 		var isMultiValue = pobjService.isManyToManyProperty( arguments.objectName, arguments.fieldName );
@@ -329,17 +333,17 @@ component {
 					targetIdList = targetIdList.toList();
 					targetIdList = ListRemoveDuplicates( targetIdList );
 
-					pobjService.syncManyToManyData(
-						  sourceObject   = objectName
-						, sourceProperty = updateField
-						, sourceId       = sourceId
-						, targetIdList   = targetIdList
+					pobjService.updateData(
+						  objectName              = objectName
+						, id                      = sourceId
+						, data                    = { "#updateField#" = targetIdList }
+						, updateManyToManyRecords = true
 					);
 				}
 
 				$audit(
-					  action   = "datamanager_batch_edit_record"
-					, type     = "datamanager"
+					  action   = arguments.auditAction
+					, type     = arguments.auditCategory
 					, recordId = sourceid
 					, detail   = Duplicate( arguments )
 				);
@@ -352,13 +356,14 @@ component {
 
 	public array function getRecordsForAjaxSelect(
 		  required string  objectName
-		,          array   ids          = []
-		,          array   selectFields = []
-		,          array   savedFilters = []
-		,          array   extraFilters = []
-		,          string  searchQuery  = ""
-		,          numeric maxRows      = 1000
-		,          string  orderBy      = "label asc"
+		,          array   ids           = []
+		,          array   selectFields  = []
+		,          array   savedFilters  = []
+		,          array   extraFilters  = []
+		,          string  searchQuery   = ""
+		,          numeric maxRows       = 1000
+		,          string  orderBy       = "label"
+		,          string  labelRenderer = ""
 	) {
 		var result = [];
 		var records = "";
@@ -369,9 +374,10 @@ component {
 			, extraFilters = arguments.extraFilters
 			, maxRows      = arguments.maxRows
 			, orderBy      = arguments.orderBy
+			, autoGroupBy  = true
 		};
-		var transormResult = function( required struct result ) {
-			result.text = result.label;
+		var transformResult = function( required struct result, required string labelRenderer ) {
+			result.text = _getLabelRendererService().renderLabel( labelRenderer, result );
 			result.value = result.id;
 			result.delete( "label" );
 			result.delete( "id" );
@@ -381,12 +387,15 @@ component {
 		var labelField         = _getPresideOBjectService().getLabelField( arguments.objectName );
 		var idField            = _getPresideOBjectService().getIdField( arguments.objectName );
 		var replacedLabelField = !Find( ".", labelField ) ? "#arguments.objectName#.${labelfield} as label" : "${labelfield} as label";
-
-		args.selectFields.delete( labelField );
-		args.selectFields.append( replacedLabelField );
-		args.selectFields.delete( "id" );
+		if ( len( arguments.labelRenderer ) ) {
+			args.selectFields = _getLabelRendererService().getSelectFieldsForLabel( arguments.labelRenderer );
+			args.orderBy      = _getLabelRendererService().getOrderByForLabels( arguments.labelRenderer, { orderBy=args.orderBy } );
+		} else {
+			args.selectFields.delete( labelField );
+			args.selectFields.append( replacedLabelField );
+			args.selectFields.delete( "id" );
+		}
 		args.selectFields.append( "#arguments.objectName#.#idField# as id" );
-
 
 		if ( arguments.ids.len() ) {
 			args.filter = { "#idField#" = arguments.ids };
@@ -398,27 +407,36 @@ component {
 		records = _getPresideObjectService().selectData( argumentCollection = args );
 		if ( arguments.ids.len() ) {
 			var tmp = {};
-			for( var r in records ) { tmp[ r.id ] = transormResult( r ) };
+			for( var r in records ) { tmp[ r.id ] = transformResult( r, arguments.labelRenderer ) };
 			for( var id in arguments.ids ){
 				if ( tmp.keyExists( id ) ) {
 					result.append( tmp[id] );
 				}
 			}
 		} else {
-			for( var r in records ) { result.append( transormResult( r ) ); }
+			for( var r in records ) { result.append( transformResult( r, arguments.labelRenderer ) ); }
 		}
 
 		return result;
 	}
 
-	public string function getPrefetchCachebusterForAjaxSelect( required string  objectName ) {
-		var obj     = _getPresideObjectService().getObject( arguments.objectName );
-		var dmField = obj.getDateModifiedField();
-		var records = obj.selectData(
-			selectFields = [ "Max( #dmField# ) as lastmodified" ]
-		);
+	public string function getPrefetchCachebusterForAjaxSelect( required string objectName, string labelRenderer="" ) {
+		var obj               = _getPresideObjectService().getObject( arguments.objectName );
+		var dmField           = obj.getDateModifiedField();
+		var lastModified      = Now();
+		var rendererCacheDate = _getLabelRendererService().getRendererCacheDate( labelRenderer );
 
-		return IsDate( records.lastmodified ) ? Hash( records.lastmodified ) : Hash( Now() );
+		if ( _getPresideObjectService().getObjectProperties( arguments.objectName ).keyExists( dmField ) ) {
+			var records = obj.selectData(
+				selectFields = [ "Max( #dmField# ) as lastmodified" ]
+			);
+
+			if ( IsDate( records.lastmodified ) ) {
+				lastModified = records.lastmodified;
+			}
+		}
+
+		return Hash( max( lastModified, rendererCacheDate ) );
 	}
 
 	public boolean function areDraftsEnabledForObject( required string objectName ) {
@@ -521,19 +539,25 @@ component {
 	}
 
 	private string function _prepareOrderByForObject( required string objectName, required string orderBy ) {
-		if( Len( Trim( arguments.orderBy ) ) ) {
-			var orderByField      = ListFirst( arguments.orderBy, " " );
-			var orderDirection    = ListRest( arguments.orderBy, " " );
-			var fieldRelationship = _getPresideObjectService().getObjectProperties( arguments.objectName )["#orderByField#"].relationship ?: "";
+		var orderByItems = ListToArray( Trim( arguments.orderBy ) );
+		var newOrderBy   = [];
+
+		for( var item in orderByItems ) {
+			var orderByField      = ListFirst( item, " " );
+			var orderDirection    = ListRest( item, " " );
+			var objectProps       = _getPresideObjectService().getObjectProperties( arguments.objectName );
+			var fieldRelationship = objectProps[ orderByField ].relationship ?: "";
 
 			if ( fieldRelationship == "many-to-one" ) {
-				var relatedLabelField = _getFullFieldName( "label", _getPresideObjectService().getObjectProperties( arguments.objectName )["#orderByField#"].relatedTo );
+				var relatedLabelField = _getFullFieldName( "${labelfield}", _getPresideObjectService().getObjectProperties( arguments.objectName )["#orderByField#"].relatedTo );
 
-				return relatedLabelField & " " & ListRest( arguments.orderBy, " " );
+				newOrderBy.append( relatedLabelField & " " & orderDirection );
+			} else {
+				newOrderBy.append( item );
 			}
 		}
 
-		return arguments.orderBy;
+		return newOrderBy.toList();
 	}
 
 	private string function _buildSearchFilter( required string q, required string objectName, required array gridFields ) {
@@ -599,7 +623,7 @@ component {
 
 		var prop = _getPresideObjectService().getObjectProperty( objectName=arguments.objectName, propertyName=arguments.field );
 
-		return ( prop.type ?: "" ) == "string";
+		return ( prop.type ?: "" ) == "string" && !( prop.formula ?: "" ).len();
 	}
 
 // GETTERS AND SETTERS
@@ -615,6 +639,13 @@ component {
 	}
 	private void function _setContentRenderer( required any contentRenderer ) {
 		_contentRenderer = arguments.contentRenderer;
+	}
+
+	private any function _getLabelRendererService() {
+		return _labelRendererService;
+	}
+	private void function _setLabelRendererService( required any labelRendererService ) {
+		_labelRendererService = arguments.labelRendererService;
 	}
 
 	private any function _getI18nPlugin() {

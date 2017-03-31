@@ -105,7 +105,7 @@ component {
 		if ( !recipientObject.len() ) {
 			throw(
 				  type    = "preside.mass.email.invalid.recipient.type"
-				, message = "The template, [#arguments.templateId#], cannot be queued for mass sending because it's recipient type, [#template.recipient_type#], does not cite a filter object from which to draw the recipients"
+				, message = "The template, [#arguments.templateId#], cannot be queued for mass sending because its recipient type, [#template.recipient_type#], does not cite a filter object from which to draw the recipients"
 			);
 		}
 
@@ -120,6 +120,7 @@ component {
 				, selectFields = [ dbAdapter.escapeEntity( "#recipientObject#.id" ), ":template", nowFunction, nowFunction ]
 				, filterParams = { template = { type="cf_sql_varchar", value=arguments.templateId } }
 				, extraFilters = extraFilters
+				, distinct     = true
 			  }
 		);
 	}
@@ -129,7 +130,7 @@ component {
 	 * the recipients for mass sending an email
 	 *
 	 * @autodoc         true
-	 * @templateId.hint ID of the template who's filters you are to get
+	 * @templateId.hint ID of the template whose filters you are to get
 	 */
 	public array function getTemplateRecipientFilters( required string templateId ) {
 		var template = _getEmailTemplateService().getTemplate( arguments.templateId );
@@ -175,7 +176,7 @@ component {
 	 * Gets a count of recipients that would be queued should the send be initiated now
 	 *
 	 * @autodoc         true
-	 * @templateId.hint ID of the template who's filters you are to get
+	 * @templateId.hint ID of the template whose filters you are to get
 	 */
 	public numeric function getTemplateRecipientCount( required string templateId ) {
 		var template = _getEmailTemplateService().getTemplate( arguments.templateId );
@@ -192,6 +193,7 @@ component {
 			  selectFields    = [ "id" ]
 			, extraFilters    = getTemplateRecipientFilters( arguments.templateId )
 			, recordCountOnly = true
+			, distinct        = true
 		);
 	}
 

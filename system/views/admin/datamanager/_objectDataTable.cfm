@@ -11,9 +11,9 @@
 	param name="args.batchEditableFields" type="array"   default=[];
 	param name="args.datasourceUrl"       type="string"  default=event.buildAdminLink( linkTo="ajaxProxy", queryString="id=#args.objectName#&action=dataManager.getObjectRecordsForAjaxDataTables&useMultiActions=#args.useMultiActions#&gridFields=#ArrayToList( args.gridFields )#&isMultilingual=#args.isMultilingual#&draftsEnabled=#args.draftsEnabled#" );
 
-	objectTitle          = translateResource( uri="preside-objects.#args.objectName#:title", defaultValue=args.objectName )
+	objectTitle          = translateResource( uri="preside-objects.#args.objectName#:title", defaultValue=args.objectName );
 	deleteSelected       = translateResource( uri="cms:datamanager.deleteSelected.title" );
-	deleteSelectedPrompt = translateResource( uri="cms:datamanager.deleteSelected.prompt", data=[ LCase( objectTitle ) ] );
+	deleteSelectedPrompt = translateResource( uri="cms:datamanager.deleteSelected.prompt", data=[ objectTitle ] );
 	batchEditTitle       = translateResource( uri="cms:datamanager.batchEditSelected.title" );
 
 
@@ -29,6 +29,8 @@
 			  linkTo      = "rulesEngine.superQuickAddFilterForm"
 			, querystring = "filter_object=#args.objectName#&multiple=false&expressions="
 		);
+
+		favourites = renderViewlet( event="admin.rulesEngine.dataGridFavourites", args={ objectName=args.objectName } );
 	}
 </cfscript>
 <cfoutput>
@@ -68,7 +70,7 @@
 					</div>
 				</div>
 
-				<div id="quick-filter-form" class="in">
+				<div id="quick-filter-form" class="in clearfix">
 					#renderFormControl(
 						  name      = "filter"
 						, id        = "filter"
@@ -90,6 +92,10 @@
 						</div>
 					</div>
 				</div>
+			</div>
+
+			<div class="object-listing-table-favourites hide" id="#tableId#-favourites">
+				#favourites#
 			</div>
 		</cfif>
 

@@ -67,6 +67,7 @@ component displayName="RulesEngine Condition Service" {
 		  required string condition
 		, required string context
 		, required any    validationResult
+		,          string filterObject = ""
 	) {
 		if ( !IsJson( arguments.condition ) ) {
 			return _malformedError( arguments.validationResult );
@@ -78,7 +79,7 @@ component displayName="RulesEngine Condition Service" {
 			return _malformedError( arguments.validationResult );
 		}
 
-		return _validateConditionGroup( parsedCondition, arguments.context, arguments.validationResult );
+		return _validateConditionGroup( parsedCondition, arguments.context, arguments.validationResult, arguments.filterObject );
 	}
 
 	/**
@@ -128,6 +129,49 @@ component displayName="RulesEngine Condition Service" {
 
 // VALIDATOR METHODS
 	/**
+	 * Returns an array of objects (names) that
+	 * can be filtered by the given condition (expression array)
+	 *
+	 * @autodoc true
+	 * @expressionArray.hint Raw condition to evaluate
+	 */
+	public array function listObjectsFilterableByCondition( required array expressionArray ) {
+		var filterableObjects = [];
+
+		for( var i=1; i<=arguments.expressionArray.len(); i++ ) {
+			var item     = arguments.expressionArray[i];
+			var isOddRow = ( i mod 2 == 1 );
+			var objects  = [];
+
+			if ( isOddRow ) {
+				if ( IsArray( item ) ) {
+					objects = listObjectsFilterableByCondition( expressionArray = item );
+				} else {
+					objects = _getExpressionService().getFilterObjectsForExpression( item.expression );
+				}
+
+				if ( i==1 ) {
+					filterableObjects = objects;
+				} else {
+					for( var n=filterableObjects.len(); n>0; n-- ) {
+						if ( !objects.findNoCase( filterableObjects[n] ) ) {
+							filterableObjects.deleteAt( n );
+						}
+					}
+				}
+
+				if ( !filterableObjects.len() ) {
+					break;
+				}
+			}
+		}
+
+		return filterableObjects;
+
+	}
+
+// VALIDATOR METHODS
+	/**
 	 * Validator for the preside validation service
 	 *
 	 * @validator
@@ -137,6 +181,7 @@ component displayName="RulesEngine Condition Service" {
 		return validateCondition(
 			  condition        = arguments.value
 			, context          = ( arguments.data.context ?: ( rc.context ?: "global" ) )
+			, filterObject     = ( arguments.data.filter_object ?: ( rc.filter_object ?: "" ) )
 			, validationResult = new preside.system.services.validation.ValidationResult()
 		);
 	}
@@ -149,6 +194,7 @@ component displayName="RulesEngine Condition Service" {
 		  required array  group
 		, required string context
 		, required any    validationResult
+		, required string filterObject
 	) {
 		var isValid = true;
 		var validJoins = "^(and|or)$";
@@ -159,7 +205,7 @@ component displayName="RulesEngine Condition Service" {
 
 			if ( isOddRow ) {
 				if ( IsArray( item ) ) {
-					isValid = _validateConditionGroup( item, arguments.context, arguments.validationResult );
+					isValid = _validateConditionGroup( item, arguments.context, arguments.validationResult, arguments.filterObject );
 					if ( !isValid ) {
 						return false;
 					}
@@ -171,6 +217,7 @@ component displayName="RulesEngine Condition Service" {
 						  expressionId     = item.expression
 						, fields           = item.fields
 						, context          = arguments.context
+						, filterObject     = arguments.filterObject
 						, validationResult = arguments.validationResult
 					);
 					if ( !isValid ) {
